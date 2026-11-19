@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="theme-color"
+      content="#f8f7f3"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#151b18"
+      media="(prefers-color-scheme: dark)"
+    />
+    <script>
+      const theme = new URLSearchParams(location.search).get("__theme");
+      if (theme === "light" || theme === "dark") {
+        document.documentElement.style.colorScheme = theme;
+      }
+    </script>
+    <title>SO-101 table top MuJoCo · LeRobot</title>
+    <link rel="stylesheet" href="/demo/style.css?v=webgl-1" />
+    <script type="module" src="/demo/app.js?v=auto-reset-1"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="#"
+          ><img
+            class="brand-mark"
+            src="/demo/lerobot-logo.svg"
+            alt=""
+            width="35"
+            height="27"
+          /><strong>LeRobot</strong><span class="divider"></span
+          ><span>EnvHub</span></a
+        >
+      </header>
+      <main>
+        <section class="intro">
+          <div>
+            <h1>SO-101 table top MuJoCo</h1>
+          </div>
+        </section>
+        <div class="workspace" id="playground">
+          <section class="simulation" aria-label="Interactive robot simulator">
+            <div class="panel-heading">
+              <div class="view-label">
+                <span class="live-dot" id="live-dot"></span
+                ><strong>Tabletop view</strong>
+              </div>
+              <span class="mono" id="connection">READY</span>
+            </div>
+            <div
+              class="viewport"
+              id="viewport"
+              tabindex="0"
+              aria-label="Robot view. Focus here to use keyboard controls."
+            >
+              <img
+                id="front-poster"
+                src="/demo/poster.jpg"
+                alt="SO-101 robot and four coloured cubes on a wooden tabletop"
+                draggable="false"
+              />
+              <canvas
+                id="front"
+                aria-label="Live front camera view"
+                hidden
+              ></canvas>
+              <div class="view-stamp">CAM 01 <span>FRONT</span></div>
+              <div class="view-bottom">
+                <span id="keyboard-state"
+                  >Click the view to focus keyboard controls</span
+                ><span class="mono" id="frame-rate">— FPS</span>
+              </div>
+              <div class="start-overlay" id="start-overlay">
+                <div>
+                  <button class="primary" id="start">
+                    Start simulation <span>→</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="toolbar">
+              <div class="seed-control">
+                <label for="seed">Scene seed</label
+                ><input
+                  id="seed"
+                  type="number"
+                  min="0"
+                  max="999999"
+                  value="7"
+                /><button id="reset" title="Reset this scene" disabled>
+                  ↻ <span>Reset</span></button
+                ><button id="shuffle" title="Generate a new scene" disabled>
+                  ⤨ <span>New scene</span>
+                </button>
+              </div>
+              <button id="home" disabled>⌂ <span>Home pose</span></button>
+            </div>
+            <div class="joint-panel">
+              <div class="section-title">
+                <h2>Joints</h2>
+              </div>
+              <div id="joint-sliders" class="joint-sliders"></div>
+            </div>
+          </section>
+          <aside class="sidebar">
+            <section class="mission" aria-label="Task progress">
+              <strong>Put each cube in the box with the matching color.</strong>
+              <span id="cube-count" aria-label="Cubes in the correct boxes"
+                >0<span>/ 4</span></span
+              >
+            </section>
+            <section class="wrist-panel">
+              <div class="panel-heading">
+                <strong>Wrist camera</strong><span class="mono">CAM 02</span>
+              </div>
+              <div class="wrist-view">
+                <img
+                  id="wrist-poster"
+                  src="/demo/wrist-poster.jpg"
+                  alt="Live camera view from the robot wrist"
+                  draggable="false"
+                /><canvas
+                  id="wrist"
+                  aria-label="Live wrist camera view"
+                  hidden
+                ></canvas
+                ><span class="wrist-badge">WRIST CAMERA</span>
+              </div>
+            </section>
+            <section class="controls">
+              <div class="section-title">
+                <h2>Controls</h2>
+                <label class="precision"
+                  ><input type="checkbox" id="precision" /> Slow mode</label
+                >
+              </div>
+              <p class="control-intro">
+                Hold a key or a button. Release to hold position.
+              </p>
+              <div class="movement-layout">
+                <div class="keypad">
+                  <button data-axis="0" data-dir="1" aria-label="Move forward">
+                    <kbd>W</kbd><span>Forward</span>
+                  </button>
+                  <div>
+                    <button data-axis="1" data-dir="1" aria-label="Move left">
+                      <kbd>A</kbd><span>Left</span></button
+                    ><button data-axis="0" data-dir="-1" aria-label="Move back">
+                      <kbd>S</kbd><span>Back</span></button
+                    ><button
+                      data-axis="1"
+                      data-dir="-1"
+                      aria-label="Move right"
+                    >
+                      <kbd>D</kbd><span>Right</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="vertical">
+                  <button data-axis="2" data-dir="1" aria-label="Move up">
+                    <kbd>Q</kbd><span>Up</span></button
+                  ><button data-axis="2" data-dir="-1" aria-label="Move down">
+                    <kbd>E</kbd><span>Down</span>
+                  </button>
+                </div>
+              </div>
+              <div class="wrist-controls">
+                <div>
+                  <span>Wrist tilt</span
+                  ><button
+                    data-axis="3"
+                    data-dir="-1"
+                    aria-label="Tilt wrist up"
+                  >
+                    <kbd>↑</kbd></button
+                  ><button
+                    data-axis="3"
+                    data-dir="1"
+                    aria-label="Tilt wrist down"
+                  >
+                    <kbd>↓</kbd>
+                  </button>
+                </div>
+                <div>
+                  <span>Wrist roll</span
+                  ><button
+                    data-axis="4"
+                    data-dir="1"
+                    aria-label="Roll wrist left"
+                  >
+                    <kbd>←</kbd></button
+                  ><button
+                    data-axis="4"
+                    data-dir="-1"
+                    aria-label="Roll wrist right"
+                  >
+                    <kbd>→</kbd>
+                  </button>
+                </div>
+              </div>
+              <button class="gripper" id="gripper" disabled>
+                <span class="gripper-icon">⊏⊐</span
+                ><strong id="gripper-label">Open / close gripper</strong
+                ><kbd>SPACE</kbd>
+              </button>
+              <button id="disconnect" hidden>End session</button>
+            </section>
+          </aside>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <section class="about">
+          <div>
+            <h2>How to run it?</h2>
+          </div>
+          <div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px 20px">
+              <a
+                href="https://huggingface.co/docs/lerobot/main/en/envhub"
+                target="_blank"
+                rel="noreferrer"
+                >EnvHub documentation <span>↗</span></a
+              >
+              <a
+                href="https://huggingface.co/spaces/lerobot/so101-tabletop-mujoco/blob/main/README.md"
+                target="_blank"
+                rel="noreferrer"
+                >Environment README <span>↗</span></a
+              >
+            </div>
+
+            <p>
+              Requires a LeRobot source checkout with Space EnvHub support and
+              Docker with the NVIDIA Container Toolkit.
+            </p>
+            <pre><code>lerobot-env-server \
+  --envhub=lerobot/so101-tabletop-mujoco \
+  --trust_remote_code=true --docker=true</code></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

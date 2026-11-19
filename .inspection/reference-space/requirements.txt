@@ -1,0 +1,4 @@
+mujoco==4.0.1
+gymnasium>=1.0
+numpy
+huggingface_hub

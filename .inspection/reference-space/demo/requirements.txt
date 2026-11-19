@@ -1,0 +1,7 @@
+mujoco==4.0.1
+gymnasium>=1.0
+numpy
+huggingface_hub
+fastapi==0.162.6
+uvicorn==0.54.0
+websockets==17.4

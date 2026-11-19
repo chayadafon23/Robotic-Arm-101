@@ -1,0 +1,9 @@
+.venv
+myenv
+.cache
+.git
+__pycache__
+.preview
+MUJOCO_LOG.TXT
+
+.ruff_cache/
