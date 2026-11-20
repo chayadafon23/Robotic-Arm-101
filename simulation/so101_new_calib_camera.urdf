@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- new camera mount -->
 <!-- Generated using onshape-to-robot -->
 <!-- Onshape https://cad.onshape.com/documents/7715cc284bb430fe6dab4ffd/w/4fd0791b683777b02f8d975a/e/826c553ede3b7592eb9ca800 -->
 <!-- Derived from so101_new_calib.urdf: adds wrist camera mount + wrist camera (Hex-Nut 32x32 UVC module form factor) -->
