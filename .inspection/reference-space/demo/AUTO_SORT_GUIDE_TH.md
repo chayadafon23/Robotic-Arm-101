@@ -34,22 +34,52 @@
 
 ### เตรียมอุปกรณ์ก่อนเพิ่มโหมดฮาร์ดแวร์
 
-สถานะปัจจุบันของโปรเจกต์ยังไม่มี LeRobot ใน `myenv` และยังไม่ได้กำหนดพอร์ตหรือกล้องจริง จึงยังไม่ควรรันตัวคัดแยกกับแขนจริง ทำตามคู่มือ [SO-101 ของ LeRobot](https://huggingface.co/docs/lerobot/so101) เพื่อเตรียมแขนก่อน:
+LeRobot ติดตั้งไว้ใน `.venv-hardware` แยกจาก `myenv` แล้ว แต่ยังไม่ได้กำหนดพอร์ตหรือกล้องจริง และแขนยังไม่ calibrate จึงยังไม่ควรรันตัวคัดแยกกับแขนจริง LeRobot รุ่นที่ใช้รองรับ Python 3.12/3.13; ถ้าต้องสร้าง environment นี้ใหม่ ให้ใช้คำสั่งจากโฟลเดอร์ `.inspection\reference-space`:
+
+```powershell
+uv venv --python 3.12 .venv-hardware
+uv pip install --python .venv-hardware\Scripts\python.exe -r requirements-hardware.txt
+```
+
+ไฟล์ `requirements-hardware.txt` ติดตั้ง LeRobot 0.7.0 พร้อม Feetech และ dependency ของ MuJoCo โดยไม่เปลี่ยน environment เดิม ทำตามคู่มือ [SO-101 ของ LeRobot](https://huggingface.co/docs/lerobot/so101) เพื่อเตรียมแขนก่อน:
 
 1. ประกอบและจ่ายไฟให้แขน พร้อมจัดพื้นที่ให้แขนขยับได้โดยไม่ชนคนหรือสิ่งของ
 2. ติดตั้ง LeRobot พร้อม Feetech SDK ตามคู่มือ แนะนำให้ใช้ environment แยกจาก `myenv` ซึ่งใช้รัน MuJoCo
-3. หา COM port ของแขน follower ด้วย `lerobot-find-port`
+3. หา COM port ของแขน follower ด้วย:
+
+   ```powershell
+   .\.venv-hardware\Scripts\lerobot-find-port.exe
+   ```
+
+   ใช้คำสั่งนี้ดูหมายเลขกล้องที่เชื่อมต่อ:
+
+   ```powershell
+   .\.venv-hardware\Scripts\lerobot-find-cameras.exe
+   ```
+
 4. ถ้ามอเตอร์ยังไม่ได้ตั้ง ID/baudrate ให้ทำขั้นตอน setup motors ตามคู่มือก่อน แล้ว calibrate แขนด้วยคำสั่ง (แทน `COMx` ด้วยพอร์ตจริง):
 
    ```powershell
-   lerobot-calibrate --robot.type=so101_follower --robot.port=COMx --robot.id=so101_follower
+   .\.venv-hardware\Scripts\lerobot-calibrate.exe --robot.type=so101_follower --robot.port=COMx --robot.id=so101_follower
    ```
 
    ทำตามคำแนะนำบนหน้าจอ โดยเว้นพื้นที่ให้แขนขยับตลอดช่วงข้อต่อ ห้ามเริ่ม auto-sort ระหว่าง calibrate
 
 5. ระบุกล้องที่จะใช้และตำแหน่งติดตั้ง แล้วจึงปรับเทียบกล้องกับโต๊ะและพิกัดแขน
 
-การติดตั้งและ calibrate เป็นเพียงการเตรียมฮาร์ดแวร์ ยังไม่ได้ทำให้ auto-sort นี้สั่งแขนจริงได้ เมื่อทราบ COM port, กล้อง และตำแหน่งติดตั้งแล้ว จึงค่อยเพิ่ม hardware backend แยกที่ต้องเปิดใช้อย่างชัดเจน โดยคง MuJoCo เป็นค่าเริ่มต้น
+หลังติดตั้ง สามารถเช็กกล้องจริงและการตรวจสีได้โดยไม่สั่งมอเตอร์:
+
+```powershell
+.\.venv-hardware\Scripts\python.exe -m demo.hardware_preflight --camera-index 0
+```
+
+หลัง calibrate แล้ว จึงค่อยเชื่อม follower เพื่ออ่านสถานะข้อต่อเพิ่ม (คำสั่งนี้ไม่ส่ง joint targets แต่ LeRobot จะ configure มอเตอร์ขณะเชื่อมต่อ และอาจปิด torque เมื่อตัดการเชื่อมต่อ ให้พยุงแขนและเคลียร์พื้นที่):
+
+```powershell
+.\.venv-hardware\Scripts\python.exe -m demo.hardware_preflight --camera-index 0 --check-arm --port COMx
+```
+
+preflight นี้ตรวจกล้อง/อ่านสถานะเท่านั้น ยังไม่ใช่ auto-sort บนฮาร์ดแวร์ ตัว sorter ปัจจุบันยังใช้ camera pose, พิกัดโต๊ะ และ IK ของ MuJoCo; ต้องปรับเทียบ geometry จริงและเพิ่ม hardware control loop ก่อนสั่งหยิบวัตถุ โดยคง MuJoCo เป็นค่าเริ่มต้น
 
 ## ผลทดสอบ
 
