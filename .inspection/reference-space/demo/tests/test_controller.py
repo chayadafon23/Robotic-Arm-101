@@ -138,7 +138,7 @@ class ControllerTests(unittest.TestCase):
             frame = session.update({})
             self.assertNotIn("images", frame)
             self.assertEqual(len(frame["bodies"]), session.model.nbody)
-            self.assertEqual(set(frame["cameras"]), {"front", "wrist"})
+            self.assertEqual(set(frame["cameras"]), {"front", "wrist", "top"})
             self.assertFalse(hasattr(session.world, "renderer"))
         finally:
             session.close()
