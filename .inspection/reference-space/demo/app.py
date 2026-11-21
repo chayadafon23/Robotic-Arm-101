@@ -21,6 +21,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from demo.auto_sort import AutoSortController, decode_browser_frame
 from env import (
     BOX_BODIES,
     CUBE_BODIES,
@@ -264,7 +265,7 @@ class DemoSession:
     def __init__(self):
         """Create one private world for a visitor."""
         self.world = DemoWorld()
-        self.cameras = DEFAULTS["cameras"]
+        self.cameras = {**DEFAULTS["cameras"], "top": "top"}
         self.seed = 7
         self.reset(self.seed)
 
@@ -275,6 +276,8 @@ class DemoSession:
         self.model, self.data = self.world.model, self.world.data
         self.target = self.world.joint_state().astype(float)
         self.controller = KeyboardController(self.model, JOINTS)
+        self.auto_sorter = AutoSortController(self.model, self.controller)
+        self.last_vision = None
         self.site = self.model.site("gripperframe").id
         self.limits = np.rad2deg(np.stack([self.controller.lo, self.controller.hi]))
         self.limits[:, 5] = [0, 100]
@@ -307,9 +310,17 @@ class DemoSession:
                 raise ValueError("Expected six finite joint targets")
             self.target = np.clip(target, *self.limits)
         elif command == "gripper":
+            self.auto_sorter.stop()
             self.target[5] = 90 if self.target[5] < 50 else 10
+        elif command == "auto_start":
+            self.last_vision = None
+            self.auto_sorter.start()
+        elif command == "auto_stop":
+            self.auto_sorter.stop()
         elif command != "step":
             raise ValueError("Unknown command")
+        if command in ("home", "joints"):
+            self.auto_sorter.stop()
         if command in ("home", "joints"):
             self.controller.last_axes = None
         dt = min(max(time.monotonic() - self.last_time, 1 / 30), 0.1)
@@ -319,6 +330,19 @@ class DemoSession:
             raise ValueError("Expected six finite control axes")
         if auto_reset:
             axes = np.zeros(6)
+        if self.auto_sorter.running:
+            if command == "step" and np.any(axes):
+                self.auto_sorter.stop()
+            else:
+                encoded = message.get("vision")
+                image = None
+                if encoded is not None and encoded != self.last_vision:
+                    image = decode_browser_frame(encoded)
+                    self.last_vision = encoded
+                axes, _ = self.auto_sorter.update(image, self.world.joint_state(), dt)
+                if self.auto_sorter.joint_target is not None:
+                    self.target = self.auto_sorter.joint_target.copy()
+                    self.controller.last_axes = None
         self.motion_limit = ""
         before_tip = self.data.site_xpos[self.site].copy()
         if not self.ended:
@@ -366,6 +390,8 @@ class DemoSession:
             "success": count == 4,
             "ended": self.ended,
             "motion_limit": self.motion_limit,
+            "auto_running": self.auto_sorter.running,
+            "auto_status": self.auto_sorter.status,
         }
 
     def close(self):
@@ -414,6 +440,8 @@ async def session(websocket: WebSocket):
             if not isinstance(message, dict):
                 raise TypeError("Expected an object")
             controls.update({key: message[key] for key in controls if key in message})
+            if "vision" in message:
+                controls["vision"] = message["vision"]
             last_input = time.monotonic()
             if message.get("command", "step") != "step":
                 commands.append(message)
@@ -465,5 +493,5 @@ if __name__ == "__main__":
         app,
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "7860")),
-        ws_max_size=16384,
+        ws_max_size=128 * 1024,
     )

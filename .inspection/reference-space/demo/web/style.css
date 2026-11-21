@@ -195,6 +195,7 @@ h1 span {
 .simulation,
 .mission,
 .wrist-panel,
+.top-panel,
 .controls {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -484,11 +485,38 @@ h1 span {
   height: 37px;
   font-size: 10px;
 }
+.top-panel .panel-heading {
+  height: 37px;
+  font-size: 10px;
+}
 .wrist-view {
   position: relative;
   aspect-ratio: 16/8.5;
   background: var(--surface-1);
   overflow: hidden;
+}
+.top-view {
+  position: relative;
+  aspect-ratio: 4/3;
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.top-view #top-prompt {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+.auto-sort {
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 650;
+  padding: 8px 11px;
+}
+.auto-sort:hover:not(:disabled) {
+  border-color: var(--accent);
 }
 .wrist-view img {
   width: 100%;
@@ -815,6 +843,9 @@ footer button[hidden] {
   .wrist-panel {
     grid-column: 2;
   }
+  .top-panel {
+    grid-column: 1;
+  }
   .mission-main {
     gap: 11px;
   }
@@ -825,6 +856,11 @@ footer button[hidden] {
     font-size: 9px;
   }
   .wrist-view {
+    aspect-ratio: auto;
+    height: calc(100% - 37px);
+    min-height: 94px;
+  }
+  .top-view {
     aspect-ratio: auto;
     height: calc(100% - 37px);
     min-height: 94px;
@@ -952,6 +988,7 @@ pre {
 }
 
 .simulation,
+.top-panel,
 .wrist-panel,
 .controls,
 .mission {
@@ -995,7 +1032,8 @@ button.pressed {
 }
 
 .viewport canvas,
-.wrist-view canvas {
+.wrist-view canvas,
+.top-view canvas {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1004,7 +1042,9 @@ button.pressed {
 }
 .viewport canvas[hidden],
 .wrist-view canvas[hidden],
+.top-view canvas[hidden],
 .viewport img[hidden],
-.wrist-view img[hidden] {
+.wrist-view img[hidden],
+#top-prompt[hidden] {
   display: none;
 }
