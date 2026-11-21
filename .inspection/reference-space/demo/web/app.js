@@ -6,7 +6,9 @@ let socket = null,
   timer = null,
   connected = false,
   pending = null,
-  latest = null;
+  latest = null,
+  autoEnabled = false,
+  lastVisionSent = 0;
 const pressed = new Set(),
   pointerAxes = new Map();
 const names = [
@@ -77,12 +79,17 @@ function sendNext() {
     $("precision").checked ||
     pressed.has("ShiftLeft") ||
     pressed.has("ShiftRight");
+  if (autoEnabled && performance.now() - lastVisionSent >= 100) {
+    const vision = viewer?.getVisionFrame();
+    if (vision) message.vision = vision;
+    lastVisionSent = performance.now();
+  }
   if (socket.bufferedAmount > 8192) return;
   message.visible = !document.hidden;
   socket.send(JSON.stringify(message));
 }
 function setEnabled(value) {
-  ["reset", "shuffle", "home", "gripper"].forEach(
+  ["reset", "shuffle", "home", "gripper", "auto-sort"].forEach(
     (id) => ($(id).disabled = !value),
   );
   sliders.forEach((el) => (el.disabled = !value));
@@ -107,6 +114,9 @@ function render(frame) {
   });
   $("gripper-label").textContent =
     frame.target[5] > 50 ? "Close gripper" : "Open gripper";
+  $("auto-sort").textContent = frame.auto_running
+    ? "Stop auto sort"
+    : "Auto sort by color";
   if (document.activeElement !== $("seed")) $("seed").value = frame.seed;
   if (frame.motion_limit) {
     setStatus(
@@ -125,6 +135,11 @@ function render(frame) {
     setStatus(
       "This session reached its time limit. Reset the scene to continue.",
     );
+  if (frame.auto_running) setStatus(frame.auto_status);
+  else if (autoEnabled) {
+    autoEnabled = false;
+    setStatus(frame.auto_status);
+  }
 }
 async function connect() {
   if (
@@ -174,6 +189,7 @@ async function connect() {
     );
   socket.onclose = () => {
     connected = false;
+    autoEnabled = false;
     clearKeys();
     clearInterval(timer);
     pending = null;
@@ -194,22 +210,32 @@ $("disconnect").addEventListener("click", () => {
   setStatus("Session ended. Start again whenever you like.");
 });
 $("reset").addEventListener("click", () => {
+  autoEnabled = false;
   clearKeys();
   pending = { command: "reset", seed: Number($("seed").value) || 0 };
   setStatus("Resetting to the same seeded tabletop.");
 });
 $("shuffle").addEventListener("click", () => {
+  autoEnabled = false;
   clearKeys();
   pending = { command: "reset", seed: Math.floor(Math.random() * 1000000) };
   setStatus("Scene reset with a new seed.");
 });
 $("home").addEventListener("click", () => {
+  autoEnabled = false;
   clearKeys();
   pending = { command: "home" };
   setStatus("Returning to the home pose.");
 });
 $("gripper").addEventListener("click", () => {
+  autoEnabled = false;
   pending = { command: "gripper" };
+});
+$("auto-sort").addEventListener("click", () => {
+  clearKeys();
+  autoEnabled = !autoEnabled;
+  pending = { command: autoEnabled ? "auto_start" : "auto_stop" };
+  setStatus(autoEnabled ? "Starting color sorting…" : "Stopping automatic sorting.");
 });
 $("viewport").addEventListener(
   "focus",

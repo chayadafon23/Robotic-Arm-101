@@ -118,27 +118,33 @@ export async function createViewer() {
     bodies[geom.body].add(mesh);
   }
 
-  const views = ["front", "wrist"].map((name) => {
+  const views = ["front", "wrist", "top"].map((name) => {
     const canvas = document.getElementById(name);
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    renderer.setPixelRatio(name === "top" ? 1 : Math.min(devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const camera = new THREE.PerspectiveCamera(60, 4 / 3, 0.003, 15);
-    const observer = new ResizeObserver(() => {
-      const width = Math.max(1, canvas.parentElement.clientWidth);
-      renderer.setSize(width, Math.round((width * 3) / 4), false);
-    });
-    observer.observe(canvas.parentElement);
+    let observer = null;
+    if (name === "top") renderer.setSize(160, 120, false);
+    else {
+      observer = new ResizeObserver(() => {
+        const width = Math.max(1, canvas.parentElement.clientWidth);
+        renderer.setSize(width, Math.round((width * 3) / 4), false);
+      });
+      observer.observe(canvas.parentElement);
+    }
     return { name, canvas, camera, renderer, observer };
   });
 
   let previous = null,
     current = null,
-    active = true;
+    active = true,
+    visionFrame = null,
+    visionRequested = false;
   let frameCount = 0,
     fpsStart = performance.now();
   const p0 = new THREE.Vector3(),
@@ -182,6 +188,25 @@ export async function createViewer() {
         view.camera.updateProjectionMatrix();
       }
       view.renderer.render(scene, view.camera);
+      if (view.name === "top" && visionRequested) {
+        const gl = view.renderer.getContext();
+        const pixels = new Uint8Array(view.canvas.width * view.canvas.height * 4);
+        gl.readPixels(
+          0,
+          0,
+          view.canvas.width,
+          view.canvas.height,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          pixels,
+        );
+        let binary = "";
+        for (let start = 0; start < pixels.length; start += 0x8000) {
+          binary += String.fromCharCode(...pixels.subarray(start, start + 0x8000));
+        }
+        visionFrame = btoa(binary);
+        visionRequested = false;
+      }
     }
     frameCount++;
     if (now - fpsStart >= 1000) {
@@ -203,13 +228,21 @@ export async function createViewer() {
       active = true;
       for (const view of views) {
         view.canvas.hidden = false;
-        document.getElementById(`${view.name}-poster`).hidden = true;
+        const poster = document.getElementById(`${view.name}-poster`);
+        if (poster) poster.hidden = true;
       }
+      document.getElementById("top-prompt").hidden = true;
+    },
+    getVisionFrame() {
+      visionRequested = true;
+      return visionFrame;
     },
     pause() {
       active = false;
       previous = null;
       current = null;
+      visionFrame = null;
+      visionRequested = false;
     },
   };
 }
