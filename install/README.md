@@ -4,10 +4,13 @@ open terminal and follow on the steps below.
 1. set environment
 go to path:
 cd Robotic-Arm-101\.inspection\reference-space
+
 run this command to set env:
 python -m venv myenv
+
 install MuJoCo:
 .\myenv\Scripts\python.exe -m pip install -r requirements.txt
+
 Check whether the installation was successful:
 .\myenv\Scripts\python.exe -c "import mujoco; print(mujoco.__version__)"
 
@@ -15,6 +18,7 @@ Check whether the installation was successful:
 
 first choice:
 To automatically sort the colored cubes in MuJoCo's interactive viewer, run this from `.inspection\reference-space`:
+
 run this command to run on MuJoCo:
 .\myenv\Scripts\python.exe -m demo.auto_sort --viewer --seed 7
 
@@ -27,8 +31,10 @@ The script prints progress and sorts the four cubes into their matching boxes wh
 
 --optional: run on Docker--
 build:
+
 docker build -t so101-tabletop .
 run:
+
 docker run --rm -p 7860:7860 so101-tabletop
 open on browser and paste this:
 http://localhost:7860
