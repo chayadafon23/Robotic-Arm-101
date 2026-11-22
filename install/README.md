@@ -2,18 +2,6 @@
 open terminal and follow on the steps below.
 
 1. set environment
-<<<<<<< HEAD
-<<<<<<< HEAD
-go to path:
-cd Robotic-Arm-101\.inspection\reference-space
-run this command to set env:
-python -m venv myenv
-install MuJoCo:
-.\myenv\Scripts\python.exe -m pip install -r requirements.txt
-Check whether the installation was successful:
-=======
-=======
->>>>>>> bd371e9c8fbdb515088b84dbd0d03dd121a665e5
 
 go to path:
 
@@ -29,10 +17,6 @@ install MuJoCo:
 
 Check whether the installation was successful:
 
-<<<<<<< HEAD
->>>>>>> simulation-model-second-version
-=======
->>>>>>> bd371e9c8fbdb515088b84dbd0d03dd121a665e5
 .\myenv\Scripts\python.exe -c "import mujoco; print(mujoco.__version__)"
 
 2. run robotic on MuJoCo:
