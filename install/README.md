@@ -3,6 +3,7 @@ open terminal and follow on the steps below.
 
 1. set environment
 <<<<<<< HEAD
+<<<<<<< HEAD
 go to path:
 cd Robotic-Arm-101\.inspection\reference-space
 run this command to set env:
@@ -11,6 +12,8 @@ install MuJoCo:
 .\myenv\Scripts\python.exe -m pip install -r requirements.txt
 Check whether the installation was successful:
 =======
+=======
+>>>>>>> bd371e9c8fbdb515088b84dbd0d03dd121a665e5
 
 go to path:
 
@@ -26,20 +29,20 @@ install MuJoCo:
 
 Check whether the installation was successful:
 
+<<<<<<< HEAD
 >>>>>>> simulation-model-second-version
+=======
+>>>>>>> bd371e9c8fbdb515088b84dbd0d03dd121a665e5
 .\myenv\Scripts\python.exe -c "import mujoco; print(mujoco.__version__)"
 
 2. run robotic on MuJoCo:
 
 first choice:
 To automatically sort the colored cubes in MuJoCo's interactive viewer, run this from `.inspection\reference-space`:
-<<<<<<< HEAD
-run this command to run on MuJoCo:
-=======
+
 
 run this command to run on MuJoCo:
 
->>>>>>> simulation-model-second-version
 .\myenv\Scripts\python.exe -m demo.auto_sort --viewer --seed 7
 
 This opens the native MuJoCo window with a top-down view and runs the controller while the simulation is visible. Keep the terminal open to see sorting progress. **To run without opening a window**, omit `--viewer`:
@@ -51,11 +54,6 @@ The script prints progress and sorts the four cubes into their matching boxes wh
 
 --optional: run on Docker--
 build:
-<<<<<<< HEAD
-docker build -t so101-tabletop .
-run:
-docker run --rm -p 7860:7860 so101-tabletop
-=======
 
 docker build -t so101-tabletop .
 
@@ -63,6 +61,5 @@ run:
 
 docker run --rm -p 7860:7860 so101-tabletop
 
->>>>>>> simulation-model-second-version
 open on browser and paste this:
 http://localhost:7860
