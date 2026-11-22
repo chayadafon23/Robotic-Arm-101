@@ -24,7 +24,6 @@ Check whether the installation was successful:
 first choice:
 To automatically sort the colored cubes in MuJoCo's interactive viewer, run this from `.inspection\reference-space`:
 
-
 run this command to run on MuJoCo:
 
 .\myenv\Scripts\python.exe -m demo.auto_sort --viewer --seed 7
