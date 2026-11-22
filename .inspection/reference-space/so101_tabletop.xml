@@ -78,46 +78,51 @@
 
     <site name="so101_mount" pos="0 0 0"/>
 
-    <body name="red_cube" pos="0.20 -0.08 0.015">
+    <!-- Cubes -->
+    <!-- set positions on the table -->
+    <body name="red_cube" pos="0.28 -0.09 0.015">
       <freejoint/>
       <geom class="cube" material="red_wood"/>
     </body>
-    <body name="green_cube" pos="0.20 0.04 0.015">
+    <!-- set positions on the table -->
+    <body name="green_cube" pos="0.28 -0.03 0.015">
       <freejoint/>
       <geom class="cube" material="green_wood"/>
     </body>
-    <body name="blue_cube" pos="0.19 0 0.015">
+    <!-- set positions on the table -->
+    <body name="blue_cube" pos="0.28 0.03 0.015">
       <freejoint/>
       <geom class="cube" material="blue_wood"/>
     </body>
-    <body name="yellow_cube" pos="0.20 0 0.015">
+    <!-- set positions on the table -->
+    <body name="yellow_cube" pos="0.28 0.09 0.015">
       <freejoint/>
       <geom class="cube" material="yellow_wood"/>
     </body>
 
     <!-- Four open boxes: 9 cm inside, one matching target for each cube color. -->
-    <body name="red_box" pos="0.14 -0.24 0" childclass="red_box_wall">
+    <body name="red_box" pos="0.05 -0.15 0" childclass="red_box_wall">
       <geom size="0.049 0.049 0.002" pos="0 0 0.002"/>
       <geom size="0.002 0.049 0.0175" pos="0.047 0 0.0175"/>
       <geom size="0.002 0.049 0.0175" pos="-0.047 0 0.0175"/>
       <geom size="0.049 0.002 0.0175" pos="0 0.047 0.0175"/>
       <geom size="0.049 0.002 0.0175" pos="0 -0.047 0.0175"/>
     </body>
-    <body name="green_box" pos="0.30 -0.24 0" childclass="green_box_wall">
+    <body name="green_box" pos="0.19 -0.15 0" childclass="green_box_wall">
       <geom size="0.049 0.049 0.002" pos="0 0 0.002"/>
       <geom size="0.002 0.049 0.0175" pos="0.047 0 0.0175"/>
       <geom size="0.002 0.049 0.0175" pos="-0.047 0 0.0175"/>
       <geom size="0.049 0.002 0.0175" pos="0 0.047 0.0175"/>
       <geom size="0.049 0.002 0.0175" pos="0 -0.047 0.0175"/>
     </body>
-    <body name="blue_box" pos="0.14 0.24 0" childclass="blue_box_wall">
+    <body name="blue_box" pos="0.05 0.15 0" childclass="blue_box_wall">
       <geom size="0.049 0.049 0.002" pos="0 0 0.002"/>
       <geom size="0.002 0.049 0.0175" pos="0.047 0 0.0175"/>
       <geom size="0.002 0.049 0.0175" pos="-0.047 0 0.0175"/>
       <geom size="0.049 0.002 0.0175" pos="0 0.047 0.0175"/>
       <geom size="0.049 0.002 0.0175" pos="0 -0.047 0.0175"/>
     </body>
-    <body name="yellow_box" pos="0.30 0.24 0" childclass="yellow_box_wall">
+    <body name="yellow_box" pos="0.19 0.15 0" childclass="yellow_box_wall">
       <geom size="0.049 0.049 0.002" pos="0 0 0.002"/>
       <geom size="0.002 0.049 0.0175" pos="0.047 0 0.0175"/>
       <geom size="0.002 0.049 0.0175" pos="-0.047 0 0.0175"/>

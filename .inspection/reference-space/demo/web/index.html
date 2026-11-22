@@ -99,6 +99,9 @@
                 </button>
               </div>
               <button id="home" disabled>⌂ <span>Home pose</span></button>
+              <button id="auto-sort" class="auto-sort" disabled>
+                Auto sort by color
+              </button>
             </div>
             <div class="joint-panel">
               <div class="section-title">
@@ -130,6 +133,15 @@
                   hidden
                 ></canvas
                 ><span class="wrist-badge">WRIST CAMERA</span>
+              </div>
+            </section>
+            <section class="top-panel">
+              <div class="panel-heading">
+                <strong>Color vision</strong><span class="mono">TOP CAMERA</span>
+              </div>
+              <div class="top-view">
+                <canvas id="top" aria-label="Top camera used for color detection" hidden></canvas>
+                <span id="top-prompt">Start the simulation to view the camera.</span>
               </div>
             </section>
             <section class="controls">

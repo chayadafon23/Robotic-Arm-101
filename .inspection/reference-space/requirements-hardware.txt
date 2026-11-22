@@ -1,0 +1,2 @@
+-r requirements.txt
+lerobot[feetech]==0.7.0

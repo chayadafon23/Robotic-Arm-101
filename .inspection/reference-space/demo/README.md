@@ -38,9 +38,20 @@ Open http://localhost:7860. No server GPU or software renderer is required; the 
 
 Hold a key or button to move. The controller solves XYZ, tilt and roll together, with bounded pose tracking and joint limits. The third rotation component is unconstrained. After all four cubes are in their color-matched boxes, the demo shows the result for two seconds and automatically resets to the same seed. Reset replays the same seed; New scene changes it. End session releases the world. There are ten concurrent sessions by default (`DEMO_MAX_SESSIONS`).
 
+Select **Auto sort by color** to run the simulation-only visual sorting controller. It parks the arm clear of the tabletop, reads the top-camera RGB image, separates the colored cubes from the larger matching boxes, and uses bounded IK with clear transit waypoints to pick and place each cube. The browser sends a small top-camera frame to the session only while auto-sort is active. The standalone Gymnasium example uses the same detector:
+
+```bash
+python -m demo.auto_sort --seed 7
+```
+
+The script uses MuJoCo's rendered `top` camera and seeded object randomization. Use `--viewer` to watch the robot sort in MuJoCo's native viewer; without it, the episode runs headlessly. Headless Linux systems may need `MUJOCO_GL=egl`.
+
+For a Thai explanation of the auto-sort flow, how its scripted controller differs from a learned policy, and the hardware limitations, see [คู่มือ Auto-sort ภาษาไทย](AUTO_SORT_GUIDE_TH.md).
+
 ## Layout
 
 - `app.py`: headless physics session, IK, scene export and pose stream.
+- `auto_sort.py`: RGB color-region detection, automatic pick-and-place sequence, and standalone Gymnasium example.
 - `web/`: interface, Three.js renderer and browser assets.
 - `requirements.txt`: demo dependencies, independent of the root environment requirements.
 - `tests/`: controller, motor tracking and pose-stream checks.
