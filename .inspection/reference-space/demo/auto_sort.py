@@ -127,11 +127,46 @@ def detect_color_regions(image: np.ndarray) -> dict[str, dict[str, tuple[float, 
 class AutoSortController:
     """Move one cube at a time using only color regions from the top camera image."""
 
-    def __init__(self, model, controller):
+    def __init__(
+        self,
+        model,
+        controller,
+        *,
+        pixel_mapper=None,
+        pose_validator=None,
+        table_z=0.0,
+        cube_top_offset=CUBE_TOP_Z,
+        cube_center_offset=0.015,
+        box_floor_offset=BOX_FLOOR_Z,
+        box_center_offset=0.022,
+        approach_height=APPROACH_HEIGHT,
+        box_approach_height=BOX_APPROACH_HEIGHT,
+        clear_x=CLEAR_X,
+        clear_z=CLEAR_Z,
+        camera_park=CAMERA_PARK,
+        colors=COLORS,
+    ):
         self.model = model
         self.controller = controller
         self.camera = model.camera("top").id
         self.fovy = float(model.cam_fovy[self.camera])
+        self.pixel_mapper = pixel_mapper
+        self.pose_validator = pose_validator
+        self.table_z = float(table_z)
+        self.cube_top_z = self.table_z + float(cube_top_offset)
+        self.cube_center_z = self.table_z + float(cube_center_offset)
+        self.box_floor_z = self.table_z + float(box_floor_offset)
+        self.box_center_z = self.table_z + float(box_center_offset)
+        self.approach_height = float(approach_height)
+        self.box_approach_height = float(box_approach_height)
+        self.clear_x = float(clear_x)
+        self.clear_z = float(clear_z)
+        self.camera_park = np.asarray(camera_park, dtype=float).copy()
+        if self.camera_park.shape != (6,):
+            raise ValueError("camera_park must contain six joint positions")
+        self.colors = tuple(colors)
+        if not self.colors or any(color not in COLORS for color in self.colors):
+            raise ValueError(f"colors must be a non-empty subset of {COLORS}")
         self.reset()
 
     def reset(self):
@@ -159,7 +194,7 @@ class AutoSortController:
         self.object_offset = None
         self.regions = None
         self.image_shape = None
-        self.joint_target = CAMERA_PARK.copy()
+        self.joint_target = self.camera_park.copy()
         self.gripper_target = 30.0
         self.grasp_orientation = None
         self.controller.last_axes = None
@@ -172,6 +207,8 @@ class AutoSortController:
         self.status = "Automatic sorting stopped"
 
     def _pixel_to_world(self, pixel, plane_z, width, height):
+        if self.pixel_mapper is not None:
+            return np.asarray(self.pixel_mapper(pixel, plane_z, width, height), dtype=float)
         x, y = pixel
         camera_pos = self.model.cam_pos[self.camera]
         rotation = self.model.cam_mat0[self.camera].reshape(3, 3)
@@ -208,6 +245,9 @@ class AutoSortController:
         return site_rotation.T @ object_from_site_world
 
     def _solve_pose(self, target, measured):
+        target = np.asarray(target, dtype=float)
+        if self.pose_validator is not None and not self.pose_validator(target):
+            raise ValueError(f"Target pose is outside the configured workspace: {target.tolist()}")
         controller = self.controller
         gripper_q = controller.lo[5] + measured[5] / 100 * (
             controller.hi[5] - controller.lo[5]
@@ -297,13 +337,13 @@ class AutoSortController:
         self.cube_xy = None
         self.box_xy = None
         self.object_offset = None
-        if self.index == len(COLORS):
+        if self.index == len(self.colors):
             self.running = False
             self.stage = "done"
-            self.status = "All four colors sorted"
+            self.status = "All configured colors sorted"
         else:
             self.stage = "find"
-            self.status = f"Looking for the {COLORS[self.index]} cube"
+            self.status = f"Looking for the {self.colors[self.index]} cube"
 
     def update(self, image, measured, dt):
         """Return jog axes and status; joint-space targets are exposed separately."""
@@ -317,7 +357,7 @@ class AutoSortController:
         if self.regions is None and self.stage != "park":
             return axes, "Waiting for the top-camera image"
         regions = self.regions or {}
-        color = COLORS[self.index]
+        color = self.colors[self.index]
         if self.stage == "find":
             cube = regions[color].get("cube")
             box = regions[color].get("box")
@@ -325,8 +365,8 @@ class AutoSortController:
                 self.status = f"Looking for the {color} cube and box"
                 return axes, self.status
             height, width = self.image_shape
-            self.cube_xy = self._pixel_to_world(cube[:2], CUBE_TOP_Z, width, height)
-            self.box_xy = self._pixel_to_world(box[:2], BOX_FLOOR_Z, width, height)
+            self.cube_xy = self._pixel_to_world(cube[:2], self.cube_top_z, width, height)
+            self.box_xy = self._pixel_to_world(box[:2], self.box_floor_z, width, height)
             self.object_offset = self._grasp_offset()
             self.stage = "align_pick"
             self.elapsed = 0
@@ -344,14 +384,14 @@ class AutoSortController:
             and self.grasp_orientation is not None
         ):
             offset = self.grasp_orientation @ self.object_offset
-            cube_center = np.array([*self.cube_xy, 0.015])
+            cube_center = np.array([*self.cube_xy, self.cube_center_z])
             positions.update(
                 {
-                    "align_pick": np.array([CLEAR_X, self.cube_xy[1], CLEAR_Z]),
-                    "above_pick": cube_center + [0, 0, APPROACH_HEIGHT] - offset,
+                    "align_pick": np.array([self.clear_x, self.cube_xy[1], self.clear_z]),
+                    "above_pick": cube_center + [0, 0, self.approach_height] - offset,
                     "grasp": cube_center - offset,
-                    "lift": cube_center + [0, 0, APPROACH_HEIGHT] - offset,
-                    "transfer_box": np.array([CLEAR_X, self.cube_xy[1], CLEAR_Z]),
+                    "lift": cube_center + [0, 0, self.approach_height] - offset,
+                    "transfer_box": np.array([self.clear_x, self.cube_xy[1], self.clear_z]),
                 }
             )
         if (
@@ -360,13 +400,13 @@ class AutoSortController:
             and self.grasp_orientation is not None
         ):
             offset = self.grasp_orientation @ self.object_offset
-            box_center = np.array([*self.box_xy, 0.022])
+            box_center = np.array([*self.box_xy, self.box_center_z])
             positions.update(
                 {
-                    "align_box": np.array([CLEAR_X, self.box_xy[1], CLEAR_Z]),
-                    "above_box": box_center + [0, 0, BOX_APPROACH_HEIGHT] - offset,
+                    "align_box": np.array([self.clear_x, self.box_xy[1], self.clear_z]),
+                    "above_box": box_center + [0, 0, self.box_approach_height] - offset,
                     "place": box_center - offset,
-                    "retreat": box_center + [0, 0, BOX_APPROACH_HEIGHT] - offset,
+                    "retreat": box_center + [0, 0, self.box_approach_height] - offset,
                 }
             )
         transitions = {
@@ -395,8 +435,8 @@ class AutoSortController:
                 if self.stage == "close":
                     self.gripper_target = 0
         elif self.stage == "park":
-            self.joint_target = CAMERA_PARK.copy()
-            if np.max(np.abs(np.asarray(measured[:5]) - CAMERA_PARK[:5])) < 1.5:
+            self.joint_target = self.camera_park.copy()
+            if np.max(np.abs(np.asarray(measured[:5]) - self.camera_park[:5])) < 1.5:
                 self.joint_target = None
                 self.grasp_orientation = self.controller.data.site_xmat[
                     self.controller.site
@@ -428,7 +468,7 @@ class AutoSortController:
             if self.elapsed >= 0.7:
                 self._next()
         self.status = (
-            "All four colors sorted"
+            "All configured colors sorted"
             if self.stage == "done"
             else (
                 "Setting the gripper camera pose"
