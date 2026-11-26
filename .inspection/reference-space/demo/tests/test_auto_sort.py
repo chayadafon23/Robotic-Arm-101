@@ -27,6 +27,30 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(sorter.stage, "park")
         np.testing.assert_array_equal(sorter.joint_target, CAMERA_PARK)
 
+    def test_hardware_sorter_returns_to_camera_pose_before_next_detection(self):
+        model = build_model(HERE / SCENE_FILE, HERE)
+        controller = KeyboardController(model, JOINTS)
+        sorter = AutoSortController(
+            model, controller, colors=("red", "green"), repark_before_find=True
+        )
+        sorter.start()
+
+        sorter._next()
+
+        self.assertEqual(sorter.stage, "park")
+        self.assertEqual(sorter.status, "Moving to a camera-clear position")
+
+    def test_simulation_sorter_keeps_existing_direct_find_transition(self):
+        model = build_model(HERE / SCENE_FILE, HERE)
+        controller = KeyboardController(model, JOINTS)
+        sorter = AutoSortController(model, controller, colors=("red", "green"))
+        sorter.start()
+
+        sorter._next()
+
+        self.assertEqual(sorter.stage, "find")
+        self.assertEqual(sorter.status, "Looking for the green cube")
+
     def test_inverse_kinematics_solves_camera_derived_pick_pose(self):
         model = build_model(HERE / SCENE_FILE, HERE)
         controller = KeyboardController(model, JOINTS)

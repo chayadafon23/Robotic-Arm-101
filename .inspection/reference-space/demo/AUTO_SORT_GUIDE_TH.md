@@ -225,6 +225,12 @@ cd C:\Users\chaya\SO_ARM101\.inspection\reference-space
 Copy-Item demo\hardware_auto_sort.example.json demo\hardware_auto_sort.json
 ```
 
+ถ้าจะใช้กล้องสองตัวแบบ strict cross-check ให้คัดลอกแม่แบบสองกล้องแทน:
+
+```powershell
+Copy-Item demo\hardware_auto_sort.two_camera.example.json demo\hardware_auto_sort.json
+```
+
 เปิด `demo\hardware_auto_sort.json` แล้วกรอกค่าที่วัดจากชุดจริง:
 
 - `image_size_px` — ความละเอียดกล้องที่ใช้ตลอดการปรับเทียบและรัน
@@ -237,33 +243,66 @@ Copy-Item demo\hardware_auto_sort.example.json demo\hardware_auto_sort.json
 
 แกนพิกัดต้องใช้กรอบเดียวกับฐานแขนตลอดทั้งไฟล์: X ตามแนวเข้า–ออกจากฐาน, Y ด้านข้าง และ Z ชี้ขึ้น ห้ามใช้พิกัดจากขอบภาพหรือมุมโต๊ะแทนพิกัดจากฐานแขน
 
+ถ้ากล้องติดอยู่เหนือ gripper กล้องจะขยับไปกับแขน การคำนวณตำแหน่งในโค้ดใช้ภาพจากท่า `camera_park_degrees` จึงต้องจัดแขนให้อยู่ในท่านี้ก่อนคลิก calibration และก่อนรัน dry run จากนั้นวัด `camera_position_m` ของจุดกลางเลนส์เทียบกับฐานแขน **ขณะที่แขนอยู่ในท่า park นี้** กล้องต้องเห็นทั้งพื้นที่ที่ใช้ตรวจจับโดยไม่ถูก gripper บัง โหมด hardware จะกลับไปท่า park ก่อนค้นหาวัตถุสีถัดไป แต่ไม่ได้ชดเชย pose ของกล้องแบบต่อเนื่องระหว่างที่แขนกำลังหยิบ
+
+#### ใช้กล้อง gripper และกล้อง overview ตรวจยืนยันกัน
+
+สำหรับชุดของคุณ กล้องหลักติดกับ gripper และกล้องรองเป็นกล้อง overview ที่ยึดนิ่งเหนือ SO-ARM/บริเวณกล่อง กล้องหลักจะให้พิกัดหยิบ ส่วนกล้องรองต้องยืนยันตำแหน่ง cube และ box สีเดียวกันในกรอบฐานแขนภายใน tolerance มิฉะนั้นโปรแกรมจะรอและไม่ส่งคำสั่งไปยังวัตถุนั้น
+
+เนื่องจากกล้องบน gripper เคลื่อนตามแขน โค้ดจะอ่านภาพหลักที่ท่า `camera_park_degrees` และกลับไปท่านี้ก่อนค้นหาสีถัดไป กล้อง overview ต้องเห็นจุดอ้างอิงและพื้นที่งาน ส่วนกล้องบน gripper ที่ท่า park ต้องเห็นวัตถุเป้าหมายเดียวกันด้วย ถ้ามุมมองไม่ซ้อนกันพอ strict cross-check จะไม่ผ่าน ทั้งสองกล้องต้อง calibrate แยกกันโดยใช้จุดอ้างอิงบนโต๊ะจริงชุดเดียวกัน
+
+แม่แบบ [`hardware_auto_sort.two_camera.example.json`](hardware_auto_sort.two_camera.example.json) มีช่องของกล้องรองเตรียมไว้แล้ว แก้ resolution ให้ตรงกับแต่ละกล้อง และกรอกตำแหน่ง/จุด calibration ที่วัดจริง:
+
+```json
+"camera_agreement_tolerance_m": 0.03,
+"secondary_camera": {
+  "image_size_px": [640, 480],
+  "calibration": {
+    "image_points_px": [[null, null], [null, null], [null, null], [null, null]],
+    "robot_points_m": [[null, null], [null, null], [null, null], [null, null]]
+  },
+  "camera_position_m": [null, null, null]
+}
+```
+
+ส่วนนี้เป็นโครงสร้างตัวอย่าง ต้องแทน `null` ด้วยค่าที่วัดจริงก่อนใช้งาน `robot_points_m` ของกล้องรองต้องเป็นจุดจริงชุดเดียวกับกล้องหลัก เรียงลำดับเดียวกัน ส่วน `image_points_px` ต้องคลิกใหม่จากภาพกล้องรอง และ `camera_position_m` ต้องวัดจากฐานแขน กล้องทั้งคู่ต้องมองเห็นจุดอ้างอิงอย่างน้อย 4 จุด กระจายบนระนาบโต๊ะ ค่า tolerance เริ่มต้น 0.03 เมตรเป็นเกณฑ์ตรวจความสอดคล้อง ไม่ใช่ความแม่นยำที่รับประกันได้ ต้องตรวจพิกัด dry run เทียบกับการวัดจริงก่อนใช้
+
 #### 2. คลิกจุดอ้างอิงในภาพ
 
-กรอก `calibration.robot_points_m` ให้ครบก่อน แล้วรัน:
+กรอก `calibration.robot_points_m` ของกล้องหลักให้ครบก่อน แล้วคลิกจุดในภาพหลัก:
 
 ```powershell
 .\.venv-hardware\Scripts\python.exe -m demo.hardware_camera_calibrate --config demo\hardware_auto_sort.json --camera-index 0
 ```
 
-คลิกจุดบนภาพตามลำดับเดียวกับ `robot_points_m` กด `R` เพื่อล้างแล้วเริ่มใหม่, `S` เพื่อบันทึก หรือ `Esc` เพื่อยกเลิก โปรแกรมจะเขียน `image_points_px` ให้ แต่จะคง `configured: false` ไว้
+สำหรับกล้องที่ติดกับ gripper ให้จัดแขนให้อยู่ตรง `camera_park_degrees` และหยุดนิ่งก่อนเปิด calibration tool คลิกจุดบนภาพตามลำดับเดียวกับ `robot_points_m` กด `R` เพื่อล้างแล้วเริ่มใหม่, `S` เพื่อบันทึก หรือ `Esc` เพื่อยกเลิก โปรแกรมจะเขียน `image_points_px` ให้ แต่จะคง `configured: false` ไว้
+
+สำหรับสองกล้อง ให้ระบุหมายเลขกล้องรองและ slot `secondary` เพื่อบันทึก calibration แยก:
+
+```powershell
+.\.venv-hardware\Scripts\python.exe -m demo.hardware_camera_calibrate --config demo\hardware_auto_sort.json --camera-index 1 --camera-slot secondary
+```
 
 ตรวจค่าทุกช่องอีกครั้ง จากนั้นจึงเปลี่ยน `configured` เป็น `true` การย้ายกล้อง โต๊ะ หรือฐานแขนภายหลังทำให้ calibration เดิมใช้ไม่ได้ ต้องปรับเทียบใหม่
 
 #### 3. Dry run โดยไม่สั่งมอเตอร์
 
-ตรวจหนึ่งสีแรกก่อน คำสั่งนี้เปิดกล้อง ตรวจสี แปลงพิกัด และตรวจ workspace แต่ไม่เชื่อมต่อหรือสั่งมอเตอร์:
+สำหรับกล้องที่ติดกับ gripper ต้องจัดแขนให้อยู่ที่ `camera_park_degrees` ด้วยตนเองก่อน dry run เพราะ dry run ไม่ได้สั่งให้แขนเคลื่อนที่ หากใช้สองกล้อง ให้ใส่ `--camera-index-2` และตั้ง calibration ของทั้งคู่ ตัวอย่าง dry run สี่สี:
 
 ```powershell
-.\.venv-hardware\Scripts\python.exe -m demo.hardware_auto_sort --config demo\hardware_auto_sort.json --camera-index 0
+.\.venv-hardware\Scripts\python.exe -m demo.hardware_auto_sort --config demo\hardware_auto_sort.json --camera-index 0 --camera-index-2 1 --max-colors 4
 ```
 
-เมื่อต้องการตรวจว่ากล้องเห็นลูกบาศก์และกล่องครบทั้งสี่สี:
+คำสั่งนี้ไม่เชื่อมต่อหรือสั่งมอเตอร์ ต้องเห็นพิกัดของ cube/box ทุกสีเป็น `inside=True` และสถานะ agreement ผ่านทั้งสองกล้อง ค่าพิกัดต้องตรงกับตำแหน่งที่วัดจริงด้วย การเห็นเพียง `inside=True` หรือกล้องสองตัวเห็นพ้องกันยังไม่ยืนยันว่า calibration ถูกต้อง ถ้าขึ้น `not detected`, `inside=False`, `disagree`, พิกัดคลาดเคลื่อน หรือโปรแกรมปฏิเสธไฟล์ ห้ามเติม `--execute`
 
-```powershell
-.\.venv-hardware\Scripts\python.exe -m demo.hardware_auto_sort --config demo\hardware_auto_sort.json --camera-index 0 --max-colors 4
-```
+##### ตรวจว่าพิกัดจากกล้องตรงกับตำแหน่งจริง
 
-ต้องเห็นพิกัดของ cube/box ทุกสีเป็น `inside=True` และค่าพิกัดที่พิมพ์ต้องตรงกับตำแหน่งที่วัดด้วยไม้บรรทัดก่อนทำขั้นต่อไป การเห็นเพียง `inside=True` ยังไม่ยืนยันว่า calibration ถูกต้อง ถ้าขึ้น `not detected`, `inside=False`, พิกัดคลาดเคลื่อน หรือโปรแกรมปฏิเสธไฟล์ ห้ามเติม `--execute`
+1. ทำเครื่องหมายจุดอ้างอิงบนโต๊ะอย่างน้อยหนึ่งจุดที่ **ไม่ได้ใช้ fit calibration** แล้ววัดตำแหน่งกึ่งกลางของจุดนั้นจากฐานแขนตามแกน X/Y ใน `robot_points_m` หน่วยเมตร
+2. วาง cube ให้กึ่งกลางอยู่ตรงจุดที่วัด และให้แขนอยู่ในท่า `camera_park_degrees` กล้องบน gripper ต้องหยุดนิ่งในท่าเดียวกับตอน calibration
+3. รัน dry run ด้านบนโดยไม่มี `--execute` แล้วอ่านพิกัด `cube=(X, Y)m` ใน Terminal เปรียบเทียบกับพิกัดที่วัดจริง เช่น วัดจริง `(0.250, -0.100)m` แต่โปรแกรมรายงาน `(0.270, -0.090)m` หมายถึงคลาด 2 ซม. ตาม X และ 1 ซม. ตาม Y
+4. ทำซ้ำหลายตำแหน่งทั่ว workspace รวมถึงตำแหน่งใกล้กล่อง อย่าใช้ `inside=True` หรือการที่กล้องสองตัวเห็นตรงกันแทนการตรวจความคลาดเคลื่อนจริง เพราะทั้งสองกล้องอาจคลาดไปทางเดียวกันได้
+
+พิกัดที่โปรแกรมรายงานคือตำแหน่งกึ่งกลางของ cube/box ในกรอบฐานแขน ไม่ใช่ตำแหน่งเทียบกับขอบโต๊ะ ภาพแสดง dry run ยังไม่ยืนยันว่าคีบได้; ความคลาดเคลื่อนต้องเล็กพอเมื่อเทียบกับขนาด cube 3 ซม. และระยะเปิดของ gripper หากคลาดชัดเจนหรือเปลี่ยนไปตามตำแหน่ง ห้ามใช้ `--execute` ให้ตรวจแกนพิกัด จุด calibration ตำแหน่งกล้อง และ resolution ก่อน
 
 #### 4. ทดลองแขนจริงหนึ่งสี
 
@@ -272,6 +311,8 @@ Copy-Item demo\hardware_auto_sort.example.json demo\hardware_auto_sort.json
 ```powershell
 .\.venv-hardware\Scripts\python.exe -m demo.hardware_auto_sort --config demo\hardware_auto_sort.json --camera-index 0 --port COM5 --max-colors 1 --execute
 ```
+
+ถ้าใช้สองกล้อง ให้เพิ่ม `--camera-index-2 1` ในคำสั่งเดียวกัน; โปรแกรมจะ cross-check ตำแหน่งวัตถุก่อนเริ่มและก่อนเคลื่อนไปหยิบแต่ละสี
 
 เมื่อใส่ `--execute` โปรแกรมจะตรวจภาพก่อน แล้วนับถอยหลัง 5 วินาทีก่อนส่งเป้าหมายข้อต่อ กด `Ctrl+C` หรือตัดไฟทันทีเมื่อทิศทางผิด ระยะผิด กล้องหลุด หรือมีโอกาสชน เมื่อโปรแกรมจบหรือล้มเหลวจะตัด torque ตอน disconnect จึงต้องเตรียมพยุงแขน
 
