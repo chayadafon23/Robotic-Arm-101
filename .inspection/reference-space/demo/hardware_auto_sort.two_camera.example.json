@@ -1,0 +1,61 @@
+{
+  "configured": false,
+  "image_size_px": [640, 480],
+  "calibration": {
+    "image_points_px": [
+      [null, null],
+      [null, null],
+      [null, null],
+      [null, null]
+    ],
+    "robot_points_m": [
+      [null, null],
+      [null, null],
+      [null, null],
+      [null, null]
+    ]
+  },
+  "camera_position_m": [null, null, null],
+  "secondary_camera": {
+    "image_size_px": [640, 480],
+    "calibration": {
+      "image_points_px": [
+        [null, null],
+        [null, null],
+        [null, null],
+        [null, null]
+      ],
+      "robot_points_m": [
+        [null, null],
+        [null, null],
+        [null, null],
+        [null, null]
+      ]
+    },
+    "camera_position_m": [null, null, null]
+  },
+  "camera_agreement_tolerance_m": 0.03,
+  "workspace_m": {
+    "x": [null, null],
+    "y": [null, null],
+    "z": [null, null]
+  },
+  "geometry_m": {
+    "table_z": null,
+    "cube_top_offset": 0.03,
+    "cube_center_offset": 0.015,
+    "box_floor_offset": 0.004,
+    "box_center_offset": 0.022,
+    "approach_height": 0.07,
+    "box_approach_height": 0.05,
+    "clear_x": null,
+    "clear_z": null
+  },
+  "camera_park_degrees": [0.0, -30.0, 30.0, 90.0, 0.0, 30.0],
+  "motion": {
+    "fps": 10,
+    "max_joint_step_degrees": 1.0,
+    "max_gripper_step": 3.0,
+    "max_run_seconds": 300
+  }
+}

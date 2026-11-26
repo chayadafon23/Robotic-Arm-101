@@ -16,7 +16,9 @@ from env import DEFAULTS, SO101Env
 
 VISION_WIDTH = 160
 VISION_HEIGHT = 120
+# Processing order is fixed; this is a scripted controller, not a trained policy.
 COLORS = ("red", "green", "blue", "yellow")
+# Connected regions in this pixel-area range are treated as cubes; larger ones as boxes.
 PIXEL_AREAS = {"cube": (8, 180), "box": (180, None)}
 BOX_FLOOR_Z = 0.004
 CUBE_TOP_Z = 0.03
@@ -38,10 +40,12 @@ def decode_browser_frame(encoded: str) -> np.ndarray:
     if len(pixels) != expected:
         raise ValueError(f"Expected {expected} vision bytes, got {len(pixels)}")
     rgba = np.frombuffer(pixels, dtype=np.uint8).reshape(VISION_HEIGHT, VISION_WIDTH, 4)
+    # WebGL readback starts at the bottom row; the controller expects top-down RGB.
     return rgba[::-1, :, :3].copy()
 
 
 def _components(mask: np.ndarray) -> list[tuple[int, float, float]]:
+    """Clean a binary color mask and return each connected region's area and centroid."""
     height, width = mask.shape
     padded = np.pad(mask, 1)
     neighbors = sum(
@@ -86,6 +90,7 @@ def detect_color_regions(image: np.ndarray) -> dict[str, dict[str, tuple[float, 
     rgb = np.asarray(image)
     if rgb.ndim != 3 or rgb.shape[2] < 3 or not rgb.size:
         raise ValueError("Vision image must be a non-empty RGB or RGBA array")
+    # Downsample before color segmentation so camera resolution does not dominate runtime.
     stride_y = max(1, int(np.ceil(rgb.shape[0] / VISION_HEIGHT)))
     stride_x = max(1, int(np.ceil(rgb.shape[1] / VISION_WIDTH)))
     rgb = rgb[::stride_y, ::stride_x, :3].astype(np.float32) / 255.0
@@ -104,6 +109,7 @@ def detect_color_regions(image: np.ndarray) -> dict[str, dict[str, tuple[float, 
     hue *= 60
     saturation = np.divide(delta, maximum, out=np.zeros_like(delta), where=maximum > 1e-6)
     vivid = (saturation > 0.32) & (maximum > 0.12)
+    # Hue intervals distinguish the four known object colors under the simulated lighting.
     ranges = {
         "red": (hue < 22) | (hue >= 340),
         "yellow": (hue >= 24) & (hue <= 72),
@@ -116,6 +122,7 @@ def detect_color_regions(image: np.ndarray) -> dict[str, dict[str, tuple[float, 
         cubes = [item for item in components if PIXEL_AREAS["cube"][0] <= item[0] <= PIXEL_AREAS["cube"][1]]
         boxes = [item for item in components if item[0] > PIXEL_AREAS["box"][0]]
         if cubes:
+            # Use the largest region of the expected size to reject small color noise.
             area, x, y = max(cubes, key=lambda item: item[0])
             found[color]["cube"] = ((x + 0.5) * stride_x - 0.5, (y + 0.5) * stride_y - 0.5, area)
         if boxes:
@@ -125,7 +132,7 @@ def detect_color_regions(image: np.ndarray) -> dict[str, dict[str, tuple[float, 
 
 
 class AutoSortController:
-    """Move one cube at a time using only color regions from the top camera image."""
+    """Scripted pick-and-place state machine driven by top-camera color regions."""
 
     def __init__(
         self,
@@ -145,6 +152,7 @@ class AutoSortController:
         clear_z=CLEAR_Z,
         camera_park=CAMERA_PARK,
         colors=COLORS,
+        repark_before_find=False,
     ):
         self.model = model
         self.controller = controller
@@ -167,6 +175,7 @@ class AutoSortController:
         self.colors = tuple(colors)
         if not self.colors or any(color not in COLORS for color in self.colors):
             raise ValueError(f"colors must be a non-empty subset of {COLORS}")
+        self.repark_before_find = bool(repark_before_find)
         self.reset()
 
     def reset(self):
@@ -207,6 +216,7 @@ class AutoSortController:
         self.status = "Automatic sorting stopped"
 
     def _pixel_to_world(self, pixel, plane_z, width, height):
+        """Project an image pixel onto a known horizontal plane using camera calibration."""
         if self.pixel_mapper is not None:
             return np.asarray(self.pixel_mapper(pixel, plane_z, width, height), dtype=float)
         x, y = pixel
@@ -225,6 +235,7 @@ class AutoSortController:
         return (camera_pos + distance * ray)[:2]
 
     def _tip(self, measured):
+        """Update cached kinematics from measured joints and return the gripper-tip position."""
         q = np.deg2rad(np.asarray(measured, dtype=float))
         q[5] = self.controller.lo[5] + measured[5] / 100 * (
             self.controller.hi[5] - self.controller.lo[5]
@@ -245,6 +256,7 @@ class AutoSortController:
         return site_rotation.T @ object_from_site_world
 
     def _solve_pose(self, target, measured):
+        """Find a bounded joint target that reaches a Cartesian pose near the current posture."""
         target = np.asarray(target, dtype=float)
         if self.pose_validator is not None and not self.pose_validator(target):
             raise ValueError(f"Target pose is outside the configured workspace: {target.tolist()}")
@@ -257,6 +269,7 @@ class AutoSortController:
             -85,
             85,
         )
+        # Try the measured posture first, then alternate IK seeds to avoid local failures.
         seeds = (
             np.asarray(measured[:5], dtype=float),
             [pan, 25, -25, 90, 0],
@@ -342,16 +355,21 @@ class AutoSortController:
             self.stage = "done"
             self.status = "All configured colors sorted"
         else:
-            self.stage = "find"
-            self.status = f"Looking for the {self.colors[self.index]} cube"
+            self.stage = "park" if self.repark_before_find else "find"
+            self.status = (
+                "Moving to a camera-clear position"
+                if self.repark_before_find
+                else f"Looking for the {self.colors[self.index]} cube"
+            )
 
     def update(self, image, measured, dt):
-        """Return jog axes and status; joint-space targets are exposed separately."""
+        """Advance one state-machine tick and return manual jog axes plus status."""
         axes = np.zeros(6)
         if not self.running:
             return axes, self.status
         self._tip(measured)
         if image is not None:
+            # Refresh detections only when a camera frame is supplied by the caller.
             self.regions = detect_color_regions(image)
             self.image_shape = image.shape[:2]
         if self.regions is None and self.stage != "park":
@@ -371,6 +389,7 @@ class AutoSortController:
             self.stage = "align_pick"
             self.elapsed = 0
 
+        # Fail closed if a pick/place sequence cannot make progress.
         self.elapsed += dt
         if self.elapsed > 20:
             self.running = False
@@ -446,6 +465,7 @@ class AutoSortController:
                 self.status = f"Looking for the {color} cube"
                 return axes, self.status
         elif self.stage == "close":
+            # Gripper movement is issued through the jog interface until its measured position closes.
             if measured[5] > 20:
                 axes[5] = -1
             else:
@@ -480,6 +500,7 @@ class AutoSortController:
 
 
 def run_episode(seed: int, max_steps: int, show_viewer: bool = False) -> bool:
+    """Run the same sorter headlessly or synchronized with MuJoCo's native viewer."""
     from demo.app import KeyboardController
 
     env = SO101Env(
@@ -510,6 +531,7 @@ def run_episode(seed: int, max_steps: int, show_viewer: bool = False) -> bool:
                     return False
                 step_started = time.perf_counter()
                 measured = world.joint_state()
+                # Vision is only needed when the controller is searching for the next color.
                 image = world.render("top") if sorter.stage == "find" else None
                 axes, status = sorter.update(image, measured, 1 / 30)
                 if sorter.joint_target is not None:
@@ -518,6 +540,7 @@ def run_episode(seed: int, max_steps: int, show_viewer: bool = False) -> bool:
                     controller.last_axes = None
                 else:
                     target, _ = controller.jog(measured, target[5], axes, 1 / 30)
+                # The sorter outputs joint targets; the environment converts them to actuator units.
                 world.data.ctrl[world.actuators] = world.to_ctrl(target)
                 mujoco.mj_step(world.model, world.data, nstep=world.substeps)
                 reward = world.cubes_in_box() / len(COLORS)
@@ -542,6 +565,7 @@ def run_episode(seed: int, max_steps: int, show_viewer: bool = False) -> bool:
 
 
 def main():
+    """Parse CLI options and start a seeded sorting episode."""
     parser = argparse.ArgumentParser(description="Sort the MuJoCo tabletop cubes using top-camera color vision.")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--max-steps", type=int, default=3600)

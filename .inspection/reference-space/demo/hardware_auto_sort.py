@@ -61,6 +61,58 @@ def fit_homography(image_points: np.ndarray, robot_points: np.ndarray) -> np.nda
 
 
 @dataclass(frozen=True)
+class CameraCalibration:
+    image_width: int
+    image_height: int
+    homography: np.ndarray
+    camera_position: np.ndarray
+
+    @classmethod
+    def load(cls, data: Any, label: str) -> "CameraCalibration":
+        if not isinstance(data, dict):
+            raise ValueError(f"{label} must be a camera calibration object")
+        image_size = data.get("image_size_px")
+        if not isinstance(image_size, list) or len(image_size) != 2:
+            raise ValueError(f"{label}.image_size_px must be [width, height]")
+        image_width, image_height = (int(image_size[0]), int(image_size[1]))
+        if image_width < 1 or image_height < 1:
+            raise ValueError(f"{label}.image_size_px values must be positive")
+        calibration = data.get("calibration", {})
+        homography = fit_homography(
+            np.asarray(calibration.get("image_points_px"), dtype=float),
+            np.asarray(calibration.get("robot_points_m"), dtype=float),
+        )
+        camera_position = _array(
+            data.get("camera_position_m"), (3,), f"{label}.camera_position_m"
+        )
+        return cls(image_width, image_height, homography, camera_position)
+
+    def pixel_to_table(self, pixel, width: int, height: int) -> np.ndarray:
+        if (width, height) != (self.image_width, self.image_height):
+            raise ValueError(
+                f"Camera returned {width}x{height}; calibration requires "
+                f"{self.image_width}x{self.image_height}"
+            )
+        ray_on_table = self.homography @ np.array([pixel[0], pixel[1], 1.0])
+        if abs(ray_on_table[2]) < 1e-12:
+            raise ValueError("Pixel cannot be mapped by the camera calibration")
+        result = ray_on_table[:2] / ray_on_table[2]
+        if not np.all(np.isfinite(result)):
+            raise ValueError("Camera calibration produced a non-finite position")
+        return result
+
+    def pixel_to_robot(self, pixel, plane_z: float, width: int, height: int, table_z: float) -> np.ndarray:
+        table_xy = self.pixel_to_table(pixel, width, height)
+        scale = (self.camera_position[2] - plane_z) / (
+            self.camera_position[2] - table_z
+        )
+        result = self.camera_position[:2] + scale * (table_xy - self.camera_position[:2])
+        if not np.all(np.isfinite(result)):
+            raise ValueError("Camera calibration produced a non-finite position")
+        return result
+
+
+@dataclass(frozen=True)
 class HardwareSortConfig:
     image_width: int
     image_height: int
@@ -83,6 +135,8 @@ class HardwareSortConfig:
     max_joint_step: float
     max_gripper_step: float
     max_run_seconds: float
+    secondary_camera: CameraCalibration | None = None
+    camera_agreement_tolerance_m: float = 0.03
 
     @classmethod
     def load(cls, path: str | Path) -> "HardwareSortConfig":
@@ -98,18 +152,27 @@ class HardwareSortConfig:
                 "Hardware config is not approved: measure every value, then set configured to true"
             )
 
-        image_size = data.get("image_size_px")
-        if not isinstance(image_size, list) or len(image_size) != 2:
-            raise ValueError("image_size_px must be [width, height]")
-        image_width, image_height = (int(image_size[0]), int(image_size[1]))
-        if image_width < 1 or image_height < 1:
-            raise ValueError("image_size_px values must be positive")
-
-        calibration = data.get("calibration", {})
-        image_points = np.asarray(calibration.get("image_points_px"), dtype=float)
-        robot_points = np.asarray(calibration.get("robot_points_m"), dtype=float)
-        homography = fit_homography(image_points, robot_points)
-        camera_position = _array(data.get("camera_position_m"), (3,), "camera_position_m")
+        primary_camera = CameraCalibration.load(data, "primary_camera")
+        image_width = primary_camera.image_width
+        image_height = primary_camera.image_height
+        homography = primary_camera.homography
+        camera_position = primary_camera.camera_position
+        secondary_camera_data = data.get("secondary_camera")
+        secondary_camera = (
+            CameraCalibration.load(secondary_camera_data, "secondary_camera")
+            if secondary_camera_data is not None
+            else None
+        )
+        try:
+            camera_agreement_tolerance_m = float(
+                data.get("camera_agreement_tolerance_m", 0.03)
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("camera_agreement_tolerance_m must be a finite number") from exc
+        if not np.isfinite(camera_agreement_tolerance_m) or not (
+            0 < camera_agreement_tolerance_m <= 0.1
+        ):
+            raise ValueError("camera_agreement_tolerance_m must be greater than 0 and at most 0.1 m")
 
         workspace = data.get("workspace_m", {})
         workspace_x = _range(workspace.get("x"), "workspace_m.x")
@@ -138,6 +201,8 @@ class HardwareSortConfig:
                 raise ValueError(f"geometry_m.{key} must be a finite number")
         if camera_position[2] <= values["table_z"]:
             raise ValueError("camera_position_m z must be above geometry_m.table_z")
+        if secondary_camera is not None and secondary_camera.camera_position[2] <= values["table_z"]:
+            raise ValueError("secondary_camera.camera_position_m z must be above geometry_m.table_z")
         for key in (
             "cube_top_offset",
             "cube_center_offset",
@@ -153,6 +218,8 @@ class HardwareSortConfig:
         )
         if highest_vision_plane >= camera_position[2]:
             raise ValueError("camera_position_m must be above every detected object plane")
+        if secondary_camera is not None and highest_vision_plane >= secondary_camera.camera_position[2]:
+            raise ValueError("secondary_camera.camera_position_m must be above every detected object plane")
 
         camera_park = _array(data.get("camera_park_degrees"), (6,), "camera_park_degrees")
         motion = data.get("motion", {})
@@ -194,6 +261,8 @@ class HardwareSortConfig:
             max_joint_step=max_joint_step,
             max_gripper_step=max_gripper_step,
             max_run_seconds=max_run_seconds,
+            secondary_camera=secondary_camera,
+            camera_agreement_tolerance_m=camera_agreement_tolerance_m,
         )
         if not config.contains(np.array([config.clear_x, 0.0, config.clear_z]), check_y=False):
             raise ValueError("geometry_m.clear_x/clear_z are outside the configured workspace")
@@ -210,22 +279,21 @@ class HardwareSortConfig:
         )
 
     def pixel_to_robot(self, pixel, plane_z: float, width: int, height: int) -> np.ndarray:
-        if (width, height) != (self.image_width, self.image_height):
-            raise ValueError(
-                f"Camera returned {width}x{height}; calibration requires "
-                f"{self.image_width}x{self.image_height}"
-            )
-        ray_on_table = self.homography @ np.array([pixel[0], pixel[1], 1.0])
-        if abs(ray_on_table[2]) < 1e-12:
-            raise ValueError("Pixel cannot be mapped by the camera calibration")
-        table_xy = ray_on_table[:2] / ray_on_table[2]
-        scale = (self.camera_position[2] - plane_z) / (
-            self.camera_position[2] - self.table_z
+        return CameraCalibration(
+            self.image_width,
+            self.image_height,
+            self.homography,
+            self.camera_position,
+        ).pixel_to_robot(pixel, plane_z, width, height, self.table_z)
+
+    def pixel_to_secondary_robot(
+        self, pixel, plane_z: float, width: int, height: int
+    ) -> np.ndarray:
+        if self.secondary_camera is None:
+            raise ValueError("No secondary camera calibration is configured")
+        return self.secondary_camera.pixel_to_robot(
+            pixel, plane_z, width, height, self.table_z
         )
-        result = self.camera_position[:2] + scale * (table_xy - self.camera_position[:2])
-        if not np.all(np.isfinite(result)):
-            raise ValueError("Camera calibration produced a non-finite position")
-        return result
 
 
 class HardwareKinematics:
@@ -276,16 +344,25 @@ class HardwareKinematics:
         return low, high
 
 
-def open_camera(index: int, config: HardwareSortConfig):
+def _camera_size(config: HardwareSortConfig, camera_slot: str) -> tuple[int, int]:
+    if camera_slot == "primary":
+        return config.image_width, config.image_height
+    if camera_slot == "secondary" and config.secondary_camera is not None:
+        return config.secondary_camera.image_width, config.secondary_camera.image_height
+    raise ValueError(f"No calibration configured for camera slot {camera_slot!r}")
+
+
+def open_camera(index: int, config: HardwareSortConfig, camera_slot: str = "primary"):
     import cv2
 
+    width, height = _camera_size(config, camera_slot)
     backend = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
     camera = cv2.VideoCapture(index, backend)
     if not camera.isOpened():
         camera.release()
         raise RuntimeError(f"Could not open camera index {index}")
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, config.image_width)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, config.image_height)
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     for _ in range(10):
         ok, _ = camera.read()
         if not ok:
@@ -294,16 +371,19 @@ def open_camera(index: int, config: HardwareSortConfig):
     return camera
 
 
-def read_frame(camera, config: HardwareSortConfig) -> np.ndarray:
+def read_frame(
+    camera, config: HardwareSortConfig, camera_slot: str = "primary"
+) -> np.ndarray:
     import cv2
 
+    expected_width, expected_height = _camera_size(config, camera_slot)
     ok, bgr = camera.read()
     if not ok or bgr is None:
         raise RuntimeError("Camera stopped returning frames")
-    if (bgr.shape[1], bgr.shape[0]) != (config.image_width, config.image_height):
+    if (bgr.shape[1], bgr.shape[0]) != (expected_width, expected_height):
         raise RuntimeError(
             f"Camera returned {bgr.shape[1]}x{bgr.shape[0]}; "
-            f"expected {config.image_width}x{config.image_height}"
+            f"expected {expected_width}x{expected_height}"
         )
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
@@ -337,6 +417,62 @@ def report_dry_run(
     return bool(complete)
 
 
+def report_camera_agreement(
+    primary_image: np.ndarray,
+    secondary_image: np.ndarray,
+    config: HardwareSortConfig,
+    colors: tuple[str, ...] = COLORS,
+) -> bool:
+    """Check that both cameras locate every requested cube and box consistently."""
+    complete = True
+    for color in colors:
+        agrees, status = camera_detections_agree(
+            primary_image, secondary_image, config, color
+        )
+        print(f"{color}: {status}")
+        complete &= agrees
+    return bool(complete)
+
+
+def camera_detections_agree(
+    primary_image: np.ndarray,
+    secondary_image: np.ndarray,
+    config: HardwareSortConfig,
+    color: str,
+) -> tuple[bool, str]:
+    """Require both fixed cameras to see matching objects at consistent robot coordinates."""
+    if config.secondary_camera is None:
+        raise ValueError("A secondary camera image requires a secondary camera calibration")
+    primary = detect_color_regions(primary_image)[color]
+    secondary = detect_color_regions(secondary_image)[color]
+    for kind, offset in (
+        ("cube", config.cube_top_offset),
+        ("box", config.box_floor_offset),
+    ):
+        primary_region = primary.get(kind)
+        secondary_region = secondary.get(kind)
+        if primary_region is None or secondary_region is None:
+            return False, f"{color} {kind} is not visible in both cameras"
+        plane_z = config.table_z + offset
+        primary_xy = config.pixel_to_robot(
+            primary_region[:2], plane_z, primary_image.shape[1], primary_image.shape[0]
+        )
+        secondary_xy = config.pixel_to_secondary_robot(
+            secondary_region[:2],
+            plane_z,
+            secondary_image.shape[1],
+            secondary_image.shape[0],
+        )
+        error = float(np.linalg.norm(primary_xy - secondary_xy))
+        if error > config.camera_agreement_tolerance_m:
+            return (
+                False,
+                f"{color} {kind} camera positions disagree by {error:.3f} m "
+                f"(limit {config.camera_agreement_tolerance_m:.3f} m)",
+            )
+    return True, f"{color} cube and box agree across cameras"
+
+
 def _joint_state(observation: dict[str, Any]) -> np.ndarray:
     measured = np.array([observation[f"{joint}.pos"] for joint in JOINTS], dtype=float)
     if not np.all(np.isfinite(measured)):
@@ -350,6 +486,7 @@ def run_hardware_sort(
     port: str,
     robot_id: str,
     colors: tuple[str, ...] = COLORS,
+    secondary_camera=None,
 ) -> bool:
     from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 
@@ -375,6 +512,7 @@ def run_hardware_sort(
         clear_z=config.clear_z,
         camera_park=config.camera_park,
         colors=colors,
+        repark_before_find=True,
     )
     relative_limits = {joint: config.max_joint_step for joint in JOINTS[:5]}
     relative_limits["gripper"] = config.max_gripper_step
@@ -390,6 +528,8 @@ def run_hardware_sort(
         raise RuntimeError(
             f"No saved calibration for robot id {robot_id!r}; run lerobot-calibrate first"
         )
+    if (config.secondary_camera is None) != (secondary_camera is None):
+        raise ValueError("A second camera device and secondary camera calibration must be supplied together")
 
     print("Motor execution enabled. Keep the emergency power cut-off within reach.")
     print("The arm starts in 5 seconds; press Ctrl+C now to cancel.")
@@ -414,6 +554,24 @@ def run_hardware_sort(
                 raise RuntimeError("Measured joint position is outside the SO-101 model limits")
 
             live_image = read_frame(camera, config)
+            secondary_image = (
+                read_frame(secondary_camera, config, "secondary")
+                if secondary_camera is not None
+                else None
+            )
+            if secondary_image is not None and sorter.stage == "find":
+                agrees, agreement_status = camera_detections_agree(
+                    live_image,
+                    secondary_image,
+                    config,
+                    sorter.colors[sorter.index],
+                )
+                if not agrees:
+                    if agreement_status != last_status:
+                        print(f"Waiting for camera agreement: {agreement_status}", flush=True)
+                        last_status = agreement_status
+                    time.sleep(period)
+                    continue
             image = live_image if sorter.stage == "find" else None
             axes, status = sorter.update(image, measured, period)
             if status != last_status:
@@ -455,6 +613,11 @@ def main() -> None:
     )
     parser.add_argument("--config", required=True, help="measured hardware JSON configuration")
     parser.add_argument("--camera-index", type=int, required=True)
+    parser.add_argument(
+        "--camera-index-2",
+        type=int,
+        help="second fixed overhead camera; requires secondary_camera calibration in the config",
+    )
     parser.add_argument("--port", help="SO-101 follower serial port, required with --execute")
     parser.add_argument("--robot-id", default="so101_follower")
     parser.add_argument(
@@ -472,6 +635,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.camera_index < 0:
         parser.error("--camera-index cannot be negative")
+    if args.camera_index_2 is not None and args.camera_index_2 < 0:
+        parser.error("--camera-index-2 cannot be negative")
+    if args.camera_index_2 == args.camera_index:
+        parser.error("--camera-index and --camera-index-2 must refer to different cameras")
     if args.execute and not args.port:
         parser.error("--port is required with --execute")
     if not args.execute and args.port:
@@ -481,12 +648,27 @@ def main() -> None:
         config = HardwareSortConfig.load(args.config)
     except ValueError as exc:
         parser.error(str(exc))
+    if (args.camera_index_2 is None) != (config.secondary_camera is None):
+        parser.error(
+            "Configure secondary_camera and provide --camera-index-2 together, "
+            "or omit both to use one camera"
+        )
 
-    camera = open_camera(args.camera_index, config)
+    camera = None
+    secondary_camera = None
     try:
+        camera = open_camera(args.camera_index, config)
+        if args.camera_index_2 is not None:
+            secondary_camera = open_camera(args.camera_index_2, config, "secondary")
         colors = COLORS[: args.max_colors]
         initial = read_frame(camera, config)
         ready = report_dry_run(initial, config, colors)
+        if secondary_camera is not None:
+            secondary_initial = read_frame(secondary_camera, config, "secondary")
+            ready = (
+                report_camera_agreement(initial, secondary_initial, config, colors)
+                and ready
+            )
         if not ready:
             raise RuntimeError(
                 "Vision/calibration preflight failed; all cubes and boxes must be detected inside the workspace"
@@ -494,11 +676,21 @@ def main() -> None:
         if not args.execute:
             print("Dry run passed. No motor commands were sent.")
             return
-        success = run_hardware_sort(camera, config, args.port, args.robot_id, colors)
+        success = run_hardware_sort(
+            camera,
+            config,
+            args.port,
+            args.robot_id,
+            colors,
+            secondary_camera,
+        )
         if not success:
             raise RuntimeError("Automatic sorting stopped before completing all colors")
     finally:
-        camera.release()
+        if camera is not None:
+            camera.release()
+        if secondary_camera is not None:
+            secondary_camera.release()
 
 
 if __name__ == "__main__":

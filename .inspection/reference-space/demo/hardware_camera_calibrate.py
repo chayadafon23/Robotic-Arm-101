@@ -10,18 +10,26 @@ from pathlib import Path
 import numpy as np
 
 
-def load_click_config(path: Path):
+def load_click_config(path: Path, camera_slot: str = "primary"):
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise ValueError(f"Config not found: {path}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"Config is not valid JSON: {exc}") from exc
-    size = data.get("image_size_px")
+    if camera_slot == "primary":
+        camera_data = data
+    elif camera_slot == "secondary":
+        camera_data = data.get("secondary_camera")
+        if not isinstance(camera_data, dict):
+            raise ValueError("Add a secondary_camera calibration object to the config first")
+    else:
+        raise ValueError(f"Unknown camera slot {camera_slot!r}")
+    size = camera_data.get("image_size_px")
     if not isinstance(size, list) or len(size) != 2:
-        raise ValueError("image_size_px must be [width, height]")
+        raise ValueError(f"{camera_slot} image_size_px must be [width, height]")
     width, height = int(size[0]), int(size[1])
-    points = np.asarray(data.get("calibration", {}).get("robot_points_m"), dtype=float)
+    points = np.asarray(camera_data.get("calibration", {}).get("robot_points_m"), dtype=float)
     if points.ndim != 2 or points.shape[1:] != (2,) or len(points) < 4:
         raise ValueError("Fill calibration.robot_points_m with at least four measured [x, y] points first")
     if not np.all(np.isfinite(points)):
@@ -113,17 +121,24 @@ def main() -> None:
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--camera-index", type=int, required=True)
+    parser.add_argument(
+        "--camera-slot",
+        choices=("primary", "secondary"),
+        default="primary",
+        help="which camera calibration in the config to update",
+    )
     args = parser.parse_args()
     if args.camera_index < 0:
         parser.error("--camera-index cannot be negative")
 
     path = Path(args.config)
     try:
-        data, width, height, robot_points = load_click_config(path)
+        data, width, height, robot_points = load_click_config(path, args.camera_slot)
         image_points = capture_points(args.camera_index, width, height, robot_points)
     except (RuntimeError, ValueError) as exc:
         parser.error(str(exc))
-    data["calibration"]["image_points_px"] = image_points
+    camera_data = data if args.camera_slot == "primary" else data["secondary_camera"]
+    camera_data["calibration"]["image_points_px"] = image_points
     data["configured"] = False
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Saved pixel points to {path}")

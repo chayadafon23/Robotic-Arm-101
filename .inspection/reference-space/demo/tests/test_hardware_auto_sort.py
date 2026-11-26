@@ -5,7 +5,11 @@ from pathlib import Path
 
 import numpy as np
 
-from demo.hardware_auto_sort import HardwareSortConfig, fit_homography
+from demo.hardware_auto_sort import (
+    HardwareSortConfig,
+    camera_detections_agree,
+    fit_homography,
+)
 from demo.hardware_camera_calibrate import load_click_config
 
 
@@ -37,6 +41,17 @@ def valid_config():
             "max_gripper_step": 3,
             "max_run_seconds": 300,
         },
+    }
+
+
+def valid_secondary_camera():
+    return {
+        "image_size_px": [640, 480],
+        "calibration": {
+            "image_points_px": [[100, 100], [500, 100], [500, 400], [100, 400]],
+            "robot_points_m": [[0.1, -0.2], [0.3, -0.2], [0.3, 0.2], [0.1, 0.2]],
+        },
+        "camera_position_m": [0.2, 0.0, 0.7],
     }
 
 
@@ -91,6 +106,72 @@ class HardwareAutoSortTests(unittest.TestCase):
             path.write_text(json.dumps(data), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "null"):
                 load_click_config(path)
+
+    def test_secondary_camera_uses_its_own_calibration(self):
+        data = valid_config()
+        data["secondary_camera"] = valid_secondary_camera()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hardware.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            config = HardwareSortConfig.load(path)
+
+        mapped = config.pixel_to_secondary_robot((100, 100), 0.0, 640, 480)
+        np.testing.assert_allclose(mapped, [0.1, -0.2], atol=1e-9)
+
+    def test_two_camera_cross_check_requires_consistent_positions(self):
+        from unittest.mock import patch
+
+        data = valid_config()
+        data["secondary_camera"] = valid_secondary_camera()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hardware.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            config = HardwareSortConfig.load(path)
+
+        primary_regions = {
+            "red": {"cube": (100, 100, 20), "box": (300, 200, 300)}
+        }
+        secondary_regions = {
+            "red": {"cube": (100, 100, 20), "box": (300, 200, 300)}
+        }
+        with patch(
+            "demo.hardware_auto_sort.detect_color_regions",
+            side_effect=(primary_regions, secondary_regions),
+        ):
+            agrees, _ = camera_detections_agree(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                config,
+                "red",
+            )
+        self.assertTrue(agrees)
+
+        secondary_regions["red"]["cube"] = (500, 400, 20)
+        with patch(
+            "demo.hardware_auto_sort.detect_color_regions",
+            side_effect=(primary_regions, secondary_regions),
+        ):
+            agrees, status = camera_detections_agree(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                config,
+                "red",
+            )
+        self.assertFalse(agrees)
+        self.assertIn("disagree", status)
+
+    def test_click_calibration_can_update_secondary_camera(self):
+        data = valid_config()
+        data["secondary_camera"] = valid_secondary_camera()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hardware.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            _, width, height, points = load_click_config(path, "secondary")
+
+        self.assertEqual((width, height), (640, 480))
+        np.testing.assert_allclose(
+            points, data["secondary_camera"]["calibration"]["robot_points_m"]
+        )
 
 
 if __name__ == "__main__":
